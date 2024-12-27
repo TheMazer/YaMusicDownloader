@@ -1,5 +1,5 @@
 from yandex_music import Client
-from support import shuffleString, Config
+from support import Config, shuffleString, sanitizeFileName
 
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
@@ -9,6 +9,10 @@ import os
 # Configuration settings
 config = Config('config.ini')
 token = config.get('token')
+if not token:
+    token = input("Введите токен: ")
+    config.set('token', token)
+    config.save()
 downloadFolder = config.get('downloadFolder')
 onlySingleArtist = config.get('onlySingleArtist') == 'True'
 shuffleTrackInfo = config.get('shuffleTrackInfo') == 'True'
@@ -44,6 +48,11 @@ def compare_playlists(favourite_tracks, downloaded_tracks):
 downloadedTracks = get_downloaded_tracks()
 missingTracks, extraTracks = compare_playlists(favouriteTracks.tracks, downloadedTracks)
 
+if len(missingTracks) == 0 or len(extraTracks) == 0:
+    print("\nПлейлист синхронизирован.")
+    print(f"  Всего {len(downloadedTracks)} треков.")
+    exit()
+
 
 # Summary
 def print_summary(missing, extra):
@@ -74,7 +83,7 @@ if choice in ["1", "2"]:
                     raise ValueError("Track not found on server.")
                 trackData = client.tracks([track_id])[0]
 
-                trackTitle = trackData.title.replace('\\', '')
+                trackTitle = trackData.title
                 trackArtists = trackData.artists_name()
 
                 # Optionally shuffle track info
@@ -94,7 +103,7 @@ if choice in ["1", "2"]:
                 print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{track_id}]", end='  |  ')
 
                 # Handle downloading
-                path = f"{downloadFolder}/{trackData.title} — {', '.join(trackData.artists_name())} [{track_id}].mp3"
+                path = f"{downloadFolder}/{sanitizeFileName(trackData.title)} — {sanitizeFileName(', '.join(trackData.artists_name()))} [{track_id}].mp3"
                 trackData.download(path)
 
                 # Download cover image
@@ -124,6 +133,9 @@ if choice in ["1", "2"]:
                 audio.save()
 
                 print("Success")
+                break
+            except (FileNotFoundError, OSError) as e:
+                print(f"File error: {e}. Skipping track.")
                 break
             except Exception as e:
                 print(f"Failed: {e}")

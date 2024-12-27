@@ -22,7 +22,7 @@ class Config:
             except KeyError: value = 0
             return value
 
-    def set(self, key, value, section = None):
+    def set(self, key, value, section = 'Settings'):
         if section is not None:
             if section not in self.config:
                 self.config[section] = {}
@@ -39,3 +39,12 @@ def shuffleString(s):
     s_list = list(s)
     random.shuffle(s_list)
     return ''.join(s_list)
+
+
+def sanitizeFileName(fileName, maxLength=100):
+    # Invalid characters
+    invalidChars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|']
+    for char in invalidChars:
+        fileName = fileName.replace(char, '')
+    # Limiting length
+    return fileName[:maxLength].strip()
