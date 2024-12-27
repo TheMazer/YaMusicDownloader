@@ -1,3 +1,4 @@
+import yandex_music.exceptions
 from yandex_music import Client
 from support import Config, shuffleString, sanitizeFileName
 
@@ -8,20 +9,33 @@ import os
 
 # Configuration settings
 config = Config('config.ini')
+
 token = config.get('token')
 if not token:
     token = input("Введите токен: ")
     config.set('token', token)
     config.save()
+
+# Initialize Yandex Music client
+try: client = Client(token).init()
+except yandex_music.exceptions.UnauthorizedError:
+    print('Failed: Invalid token')
+    config.set('token', '')
+    config.save()
+    exit()
+
 downloadFolder = config.get('downloadFolder')
+if not downloadFolder:
+    downloadFolder = input("Введите папку для загрузки: ").replace('\\', '/')
+    config.set('downloadFolder', downloadFolder)
+    config.save()
+
 onlySingleArtist = config.get('onlySingleArtist') == 'True'
 shuffleTrackInfo = config.get('shuffleTrackInfo') == 'True'
 needToDownload = config.get('needToDownload') == 'True'
 
-# Initialize Yandex Music client
-client = Client(token).init()
+# Get list of favourite tracks
 favouriteTracks = client.users_likes_tracks()
-
 
 # Get list of downloaded tracks
 def get_downloaded_tracks(directory = downloadFolder):
@@ -48,7 +62,7 @@ def compare_playlists(favourite_tracks, downloaded_tracks):
 downloadedTracks = get_downloaded_tracks()
 missingTracks, extraTracks = compare_playlists(favouriteTracks.tracks, downloadedTracks)
 
-if len(missingTracks) == 0 or len(extraTracks) == 0:
+if len(missingTracks) == 0 and len(extraTracks) == 0:
     print("\nПлейлист синхронизирован.")
     print(f"  Всего {len(downloadedTracks)} треков.")
     exit()
