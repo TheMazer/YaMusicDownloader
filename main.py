@@ -1,88 +1,140 @@
 from yandex_music import Client
-from support import shuffleString
+from support import shuffleString, Config
 
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC
+import os
 
 # Configuration settings
-token = 'y0_AgAAAABXU6vtAAG8XgAAAAEQbCWVAAATTZcPPXxKn6WMIS7DlELNS-jiUQ'
-onlySingleArtist = True
-shuffleTrackInfo = False
-needToDownload = True
+config = Config('config.ini')
+token = config.get('token')
+downloadFolder = config.get('downloadFolder')
+onlySingleArtist = config.get('onlySingleArtist') == 'True'
+shuffleTrackInfo = config.get('shuffleTrackInfo') == 'True'
+needToDownload = config.get('needToDownload') == 'True'
 
 # Initialize Yandex Music client
 client = Client(token).init()
 favouriteTracks = client.users_likes_tracks()
 
-totalTracks = len(favouriteTracks)
-for i, track in enumerate(favouriteTracks):
-    attempts = 3
-    while attempts > 0:
-        try:
-            # Fetch track data
-            trackData = track.fetch_track()
 
-            trackTitle = trackData.title
-            trackArtists = trackData.artists_name()
-
-            # Optionally shuffle track info
-            if shuffleTrackInfo:
-                trackTitle = shuffleString(trackTitle)
-                for artist in range(len(trackArtists)):
-                    trackArtists[artist] = shuffleString(trackArtists[artist])
-
-            # Show only single artist if configured
-            if onlySingleArtist:
-                artists = trackArtists[0]
-            else:
-                artists = ', '.join(trackArtists)
-
-            # Print track info
-            digits = len(str(totalTracks))
-            if needToDownload:
-                print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{track.id}]", end='  |  ')
-            else:
-                print(f"{i + 1:0{digits}} / {totalTracks}  |  {trackTitle} — {artists} [{track.id}]")
-
-            # Handle downloading if enabled
-            if needToDownload:
+# Get list of downloaded tracks
+def get_downloaded_tracks(directory = downloadFolder):
+    downloaded = set()
+    if os.path.exists(directory):
+        for file in os.listdir(directory):
+            if file.endswith(".mp3"):
                 try:
-                    path = f"download/{trackData.title} — {', '.join(trackData.artists_name())} [{track.id}].mp3"
-                    trackData.download(path)
+                    track_id = file[file.rfind("[") + 1:file.rfind("]")]
+                    downloaded.add(track_id)
+                except Exception:
+                    continue
+    return downloaded
 
-                    # Download cover image
-                    coverPath = "cover.png"
-                    trackData.downloadCover(coverPath)
 
-                    # Add metadata to the downloaded file
-                    audio = MP3(path, ID3=EasyID3)
-                    audio['title'] = trackData.title
-                    audio['artist'] = ', '.join(trackData.artists_name())
-                    audio['album'] = trackData.albums[0].title
-                    audio.save()
+# Compare playlists
+def compare_playlists(favourite_tracks, downloaded_tracks):
+    server_track_ids = {str(track.id) for track in favourite_tracks}
+    missing_tracks = server_track_ids - downloaded_tracks
+    extra_tracks = downloaded_tracks - server_track_ids
+    return missing_tracks, extra_tracks
 
-                    # Add cover image to the file
-                    audio = MP3(path, ID3=ID3)
-                    with open(coverPath, "rb") as coverFile:
-                        coverData = coverFile.read()
-                    audio.tags.add(
-                        APIC(
-                            encoding=0,  # Latin-1
-                            mime="image/jpeg" if coverPath.endswith(".jpg") else "image/png",  # MIME type of the image
-                            type=3,  # Front cover
-                            desc="Cover",
-                            data=coverData
-                        )
+
+downloadedTracks = get_downloaded_tracks()
+missingTracks, extraTracks = compare_playlists(favouriteTracks.tracks, downloadedTracks)
+
+
+# Summary
+def print_summary(missing, extra):
+    print(f"\nПлейлист не синхронизирован:")
+    print(f"  {len(missing)} треков отсутствует.")
+    print(f"  {len(extra)} треков лишние.")
+    print("\nВыберите режим работы:")
+    print("  [0] Выход")
+    print("  [1] Скачать недостающие треки")
+    print("  [2] Скачать недостающие треки + Удалить лишние")
+
+print_summary(missingTracks, extraTracks)
+
+# User choice
+choice = input("Введите номер команды: ")
+if choice == "0":
+    exit()
+if choice in ["1", "2"]:
+    # Download missing tracks
+    totalTracks = len(missingTracks)
+    for i, track_id in enumerate(missingTracks):
+        attempts = 3
+        while attempts > 0:
+            try:
+                # Fetch track data
+                track = next((t for t in favouriteTracks.tracks if str(t.id) == track_id), None)
+                if not track:
+                    raise ValueError("Track not found on server.")
+                trackData = client.tracks([track_id])[0]
+
+                trackTitle = trackData.title.replace('\\', '')
+                trackArtists = trackData.artists_name()
+
+                # Optionally shuffle track info
+                if shuffleTrackInfo:
+                    trackTitle = shuffleString(trackTitle)
+                    for artist in range(len(trackArtists)):
+                        trackArtists[artist] = shuffleString(trackArtists[artist])
+
+                # Show only single artist if configured
+                if onlySingleArtist:
+                    artists = trackArtists[0]
+                else:
+                    artists = ', '.join(trackArtists)
+
+                # Print track info
+                digits = len(str(totalTracks))
+                print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{track_id}]", end='  |  ')
+
+                # Handle downloading
+                path = f"{downloadFolder}/{trackData.title} — {', '.join(trackData.artists_name())} [{track_id}].mp3"
+                trackData.download(path)
+
+                # Download cover image
+                coverPath = "cover.png"
+                trackData.downloadCover(coverPath)
+
+                # Add metadata to the downloaded file
+                audio = MP3(path, ID3=EasyID3)
+                audio['title'] = trackData.title
+                audio['artist'] = ', '.join(trackData.artists_name())
+                audio['album'] = trackData.albums[0].title
+                audio.save()
+
+                # Add cover image to the file
+                audio = MP3(path, ID3=ID3)
+                with open(coverPath, "rb") as coverFile:
+                    coverData = coverFile.read()
+                audio.tags.add(
+                    APIC(
+                        encoding=0,  # Latin-1
+                        mime="image/jpeg" if coverPath.endswith(".jpg") else "image/png",  # MIME type of the image
+                        type=3,  # Front cover
+                        desc="Cover",
+                        data=coverData
                     )
-                    audio.save()
+                )
+                audio.save()
 
-                    print("Success")
-                except Exception as e:
-                    print(f"Failed: {e}")
+                print("Success")
+                break
+            except Exception as e:
+                print(f"Failed: {e}")
+                attempts -= 1
+                if attempts == 0:
+                    print(f"Unable to fetch track's info, id: {track_id}")
 
-            break
-        except:
-            attempts -= 1
-            if attempts == 0:
-                print(f"Unable to fetch track's info, id: {track.id}")
+    # Delete extra tracks if option 2 is chosen
+    if choice == "2":
+        for extra_id in extraTracks:
+            file_to_remove = next((f for f in os.listdir(downloadFolder) if f.endswith(f"[{extra_id}].mp3")), None)
+            if file_to_remove:
+                os.remove(os.path.join(downloadFolder, file_to_remove))
+                print(f"Deleted extra track: {file_to_remove}")
