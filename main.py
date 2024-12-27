@@ -52,7 +52,7 @@ for i, track in enumerate(favouriteTracks):
                     trackData.download(path)
 
                     # Download cover image
-                    coverPath = f"cover {trackData.title}.png"
+                    coverPath = "cover.png"
                     trackData.downloadCover(coverPath)
 
                     # Add metadata to the downloaded file
@@ -65,15 +65,16 @@ for i, track in enumerate(favouriteTracks):
                     # Add cover image to the file
                     audio = MP3(path, ID3=ID3)
                     with open(coverPath, "rb") as coverFile:
-                        audio.tags.add(
-                            APIC(
-                                encoding=3,  # UTF-8
-                                mime="image/png",  # MIME type of the image
-                                type=3,  # Front cover
-                                desc="Cover",
-                                data=coverFile.read()
-                            )
+                        coverData = coverFile.read()
+                    audio.tags.add(
+                        APIC(
+                            encoding=0,  # Latin-1
+                            mime="image/jpeg" if coverPath.endswith(".jpg") else "image/png",  # MIME type of the image
+                            type=3,  # Front cover
+                            desc="Cover",
+                            data=coverData
                         )
+                    )
                     audio.save()
 
                     print("Success")
