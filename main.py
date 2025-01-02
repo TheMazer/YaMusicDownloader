@@ -37,30 +37,31 @@ needToDownload = config.get('needToDownload') == 'True'
 # Get list of favourite tracks
 favouriteTracks = client.users_likes_tracks()
 
+
 # Get list of downloaded tracks
-def get_downloaded_tracks(directory = downloadFolder):
+def getDownloadedTracks(directory = downloadFolder):
     downloaded = set()
     if os.path.exists(directory):
         for file in os.listdir(directory):
             if file.endswith(".mp3"):
                 try:
-                    track_id = file[file.rfind("[") + 1:file.rfind("]")]
-                    downloaded.add(track_id)
+                    trackId = file[file.rfind("[") + 1:file.rfind("]")]
+                    downloaded.add(trackId)
                 except Exception:
                     continue
     return downloaded
 
 
 # Compare playlists
-def compare_playlists(favourite_tracks, downloaded_tracks):
-    server_track_ids = {str(track.id) for track in favourite_tracks}
-    missing_tracks = server_track_ids - downloaded_tracks
-    extra_tracks = downloaded_tracks - server_track_ids
-    return missing_tracks, extra_tracks
+def comparePlaylists(favouriteTracks, downloadedTracks):
+    serverTrackIds = {str(track.id) for track in favouriteTracks}
+    missingTracks = serverTrackIds - downloadedTracks
+    extraTracks = downloadedTracks - serverTrackIds
+    return missingTracks, extraTracks
 
 
-downloadedTracks = get_downloaded_tracks()
-missingTracks, extraTracks = compare_playlists(favouriteTracks.tracks, downloadedTracks)
+downloadedTracks = getDownloadedTracks()
+missingTracks, extraTracks = comparePlaylists(favouriteTracks.tracks, downloadedTracks)
 
 if len(missingTracks) == 0 and len(extraTracks) == 0:
     print("\nПлейлист синхронизирован.")
@@ -69,7 +70,7 @@ if len(missingTracks) == 0 and len(extraTracks) == 0:
 
 
 # Summary
-def print_summary(missing, extra):
+def printSummary(missing, extra):
     print(f"\nПлейлист не синхронизирован:")
     print(f"  {len(missing)} треков отсутствует.")
     print(f"  {len(extra)} треков лишние.")
@@ -78,7 +79,8 @@ def print_summary(missing, extra):
     print("  [1] Скачать недостающие треки")
     print("  [2] Скачать недостающие треки + Удалить лишние")
 
-print_summary(missingTracks, extraTracks)
+
+printSummary(missingTracks, extraTracks)
 
 # User choice
 choice = input("Введите номер команды: ")
@@ -87,15 +89,15 @@ if choice == "0":
 if choice in ["1", "2"]:
     # Download missing tracks
     totalTracks = len(missingTracks)
-    for i, track_id in enumerate(missingTracks):
+    for i, trackId in enumerate(missingTracks):
         attempts = 3
         while attempts > 0:
             try:
                 # Fetch track data
-                track = next((t for t in favouriteTracks.tracks if str(t.id) == track_id), None)
+                track = next((t for t in favouriteTracks.tracks if str(t.id) == trackId), None)
                 if not track:
                     raise ValueError("Track not found on server.")
-                trackData = client.tracks([track_id])[0]
+                trackData = client.tracks([trackId])[0]
 
                 trackTitle = trackData.title
                 trackArtists = trackData.artists_name()
@@ -114,10 +116,10 @@ if choice in ["1", "2"]:
 
                 # Print track info
                 digits = len(str(totalTracks))
-                print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{track_id}]", end='  |  ')
+                print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{trackId}]", end='  |  ')
 
                 # Handle downloading
-                path = f"{downloadFolder}/{sanitizeFileName(trackData.title)} — {sanitizeFileName(', '.join(trackData.artists_name()))} [{track_id}].mp3"
+                path = f"{downloadFolder}/{sanitizeFileName(trackData.title)} — {sanitizeFileName(', '.join(trackData.artists_name()))} [{trackId}].mp3"
                 trackData.download(path)
 
                 # Download cover image
@@ -155,12 +157,29 @@ if choice in ["1", "2"]:
                 print(f"Failed: {e}")
                 attempts -= 1
                 if attempts == 0:
-                    print(f"Unable to fetch track's info, id: {track_id}")
+                    print(f"Unable to fetch track's info, id: {trackId}")
 
     # Delete extra tracks if option 2 is chosen
     if choice == "2":
-        for extra_id in extraTracks:
-            file_to_remove = next((f for f in os.listdir(downloadFolder) if f.endswith(f"[{extra_id}].mp3")), None)
-            if file_to_remove:
-                os.remove(os.path.join(downloadFolder, file_to_remove))
-                print(f"Deleted extra track: {file_to_remove}")
+        print(f"\nВыберите действие для удаления лишних треков {len(missingTracks)}:")
+        print("  [0] Не удалять лишние треки")
+        print("  [1] Запрашивать подтверждение для каждого трека")
+        print("  [2] Удалить лишние треки без подтверждения")
+        deleteChoice = input("Введите номер команды: ")
+
+        if deleteChoice == "0":
+            pass
+        elif deleteChoice == "1":
+            for extraId in extraTracks:
+                fileToRemove = next((f for f in os.listdir(downloadFolder) if f.endswith(f"[{extraId}].mp3")), None)
+                if fileToRemove:
+                    confirm = input(f"Удалить {fileToRemove}? (y/n): ")
+                    if confirm.lower() in ('y', '1', 't', 'yes', 'true'):
+                        os.remove(os.path.join(downloadFolder, fileToRemove))
+                        print(f"Deleted extra track: {fileToRemove}\n")
+        elif deleteChoice == "2":
+            for extraId in extraTracks:
+                fileToRemove = next((f for f in os.listdir(downloadFolder) if f.endswith(f"[{extraId}].mp3")), None)
+                if fileToRemove:
+                    os.remove(os.path.join(downloadFolder, fileToRemove))
+                    print(f"Deleted extra track: {fileToRemove}")
