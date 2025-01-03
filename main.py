@@ -38,19 +38,29 @@ needToDownload = config.get('needToDownload') == 'True'
 favouriteTracks = client.users_likes_tracks()
 
 
-# Get list of downloaded tracks
+# Get list of downloaded tracks and remove duplicates
 def getDownloadedTracks(directory = downloadFolder):
     downloaded = set()
+
     if os.path.exists(directory):
         for file in os.listdir(directory):
             if file.endswith(".mp3"):
                 try:
-                    path = os.path.join(directory, file)
+                    path = f"{directory}/{file}"
                     audio = MP3(path, ID3=ID3)
                     trackId = audio.get('TXXX:trackID', None)[0]
 
-                    if trackId: downloaded.add(trackId)
-                except Exception:
+                    if not trackId: continue
+
+                    if trackId in downloaded:
+                        confirm = input(f"Найден дубликат: {file}. Удалить? (y/n): ")
+                        if confirm.lower() in ('y', '1', 't', 'yes', 'true'):
+                            os.remove(path)
+                            print(f"Duplicate removed: {file}")
+                    else:
+                        downloaded.add(trackId)
+                except Exception as e:
+                    print(f"Error processing file {file}: {e}")
                     continue
     return downloaded
 
@@ -120,7 +130,21 @@ if choice in ["1", "2"]:
                     print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{trackId}]", end='  |  ')
 
                 # Handle downloading
-                path = f"{downloadFolder}/{sanitizeFileName(trackTitle)} — {sanitizeFileName(artists)}.mp3"
+                sanitizedTitle = sanitizeFileName(trackTitle)
+                sanitizedArtists = sanitizeFileName(artists)
+                path = f"{downloadFolder}/{sanitizedTitle} — {sanitizedArtists}.mp3"
+
+                # Check if file exists and handle duplicates
+                if os.path.exists(path):
+                    existingAudio = MP3(path, ID3=ID3)
+                    existingTrackId = existingAudio.get('TXXX:trackID', [None])[0]
+
+                    if existingTrackId != trackId:
+                        # Appending ID to existing track
+                        os.rename(path, f"{downloadFolder}/{sanitizedTitle} — {sanitizedArtists} [{existingTrackId}].mp3")
+                        # Appending ID to new track
+                        path = f"{downloadFolder}/{sanitizedTitle} — {sanitizedArtists} [{trackId}].mp3"
+
                 trackData.download(path)
 
                 # Download cover image
@@ -181,9 +205,9 @@ if choice in ["1", "2"]:
             pass
         elif deleteChoice == "1":
             for extraId in extraTracks:
-                try:
-                    for file in os.listdir(downloadFolder):
-                        path = os.path.join(downloadFolder, file)
+                for file in os.listdir(downloadFolder):
+                    try:
+                        path = f"{downloadFolder}/{file}"
                         audio = MP3(path, ID3=ID3)
                         trackId = audio.get('TXXX:trackID', [None])[0]
                         if trackId == extraId:
@@ -191,17 +215,17 @@ if choice in ["1", "2"]:
                             if confirm.lower() in ('y', '1', 't', 'yes', 'true'):
                                 os.remove(path)
                                 print(f"Deleted extra track: {file}\n")
-                except Exception:
-                    continue
+                    except Exception:
+                        continue
         elif deleteChoice == "2":
             for extraId in extraTracks:
-                try:
-                    for file in os.listdir(downloadFolder):
-                        path = os.path.join(downloadFolder, file)
+                for file in os.listdir(downloadFolder):
+                    try:
+                        path = f"{downloadFolder}/{file}"
                         audio = MP3(path, ID3=ID3)
                         trackId = audio.get('TXXX:trackID', [None])[0]
                         if trackId == extraId:
                             os.remove(path)
                             print(f"Deleted extra track: {file}")
-                except Exception:
-                    continue
+                    except Exception:
+                        continue
