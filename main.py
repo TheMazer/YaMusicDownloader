@@ -4,7 +4,7 @@ from support import Config, shuffleString, sanitizeFileName
 
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, APIC
+from mutagen.id3 import ID3, APIC, TXXX
 import os
 
 # Configuration settings
@@ -45,8 +45,11 @@ def getDownloadedTracks(directory = downloadFolder):
         for file in os.listdir(directory):
             if file.endswith(".mp3"):
                 try:
-                    trackId = file[file.rfind("[") + 1:file.rfind("]")]
-                    downloaded.add(trackId)
+                    path = os.path.join(directory, file)
+                    audio = MP3(path, ID3=ID3)
+                    trackId = audio.get('TXXX:trackID', None)[0]
+
+                    if trackId: downloaded.add(trackId)
                 except Exception:
                     continue
     return downloaded
@@ -96,30 +99,28 @@ if choice in ["1", "2"]:
                 # Fetch track data
                 track = next((t for t in favouriteTracks.tracks if str(t.id) == trackId), None)
                 if not track:
-                    raise ValueError("Track not found on server.")
+                    attempts = 0
+                    raise f"Track {trackId} not found on server."
                 trackData = client.tracks([trackId])[0]
 
                 trackTitle = trackData.title
                 trackArtists = trackData.artists_name()
 
-                # Optionally shuffle track info
-                if shuffleTrackInfo:
-                    trackTitle = shuffleString(trackTitle)
-                    for artist in range(len(trackArtists)):
-                        trackArtists[artist] = shuffleString(trackArtists[artist])
-
                 # Show only single artist if configured
-                if onlySingleArtist:
-                    artists = trackArtists[0]
-                else:
-                    artists = ', '.join(trackArtists)
+                if onlySingleArtist: artists = trackArtists[0]
+                else: artists = ', '.join(trackArtists)
 
-                # Print track info
+                # Print & optionally shuffle track info
                 digits = len(str(totalTracks))
-                print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{trackId}]", end='  |  ')
+                if shuffleTrackInfo:
+                    shuffledArtists = []
+                    for artist in trackArtists: shuffledArtists.append(shuffleString(artist))
+                    print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {shuffleString(trackTitle)} — {shuffledArtists} [{trackId}]", end='  |  ')
+                else:
+                    print(f"{i + 1:0{digits}} / {totalTracks}  |  Downloading...  |  {trackTitle} — {artists} [{trackId}]", end='  |  ')
 
                 # Handle downloading
-                path = f"{downloadFolder}/{sanitizeFileName(trackData.title)} — {sanitizeFileName(', '.join(trackData.artists_name()))} [{trackId}].mp3"
+                path = f"{downloadFolder}/{sanitizeFileName(trackTitle)} — {sanitizeFileName(artists)}.mp3"
                 trackData.download(path)
 
                 # Download cover image
@@ -146,6 +147,15 @@ if choice in ["1", "2"]:
                         data=coverData
                     )
                 )
+
+                # Add ID to the file
+                audio.tags.add(
+                    TXXX(
+                        encoding=3,  # UTF-8
+                        desc='trackID',  # Description of custom tag
+                        text=trackId  # Store the track ID as string
+                    )
+                )
                 audio.save()
 
                 print("Success")
@@ -161,7 +171,7 @@ if choice in ["1", "2"]:
 
     # Delete extra tracks if option 2 is chosen
     if choice == "2":
-        print(f"\nВыберите действие для удаления лишних треков {len(missingTracks)}:")
+        print(f"\nВыберите действие для удаления лишних треков {len(extraTracks)}:")
         print("  [0] Не удалять лишние треки")
         print("  [1] Запрашивать подтверждение для каждого трека")
         print("  [2] Удалить лишние треки без подтверждения")
@@ -171,15 +181,27 @@ if choice in ["1", "2"]:
             pass
         elif deleteChoice == "1":
             for extraId in extraTracks:
-                fileToRemove = next((f for f in os.listdir(downloadFolder) if f.endswith(f"[{extraId}].mp3")), None)
-                if fileToRemove:
-                    confirm = input(f"Удалить {fileToRemove}? (y/n): ")
-                    if confirm.lower() in ('y', '1', 't', 'yes', 'true'):
-                        os.remove(os.path.join(downloadFolder, fileToRemove))
-                        print(f"Deleted extra track: {fileToRemove}\n")
+                try:
+                    for file in os.listdir(downloadFolder):
+                        path = os.path.join(downloadFolder, file)
+                        audio = MP3(path, ID3=ID3)
+                        trackId = audio.get('TXXX:trackID', [None])[0]
+                        if trackId == extraId:
+                            confirm = input(f"Удалить {file}? (y/n): ")
+                            if confirm.lower() in ('y', '1', 't', 'yes', 'true'):
+                                os.remove(path)
+                                print(f"Deleted extra track: {file}\n")
+                except Exception:
+                    continue
         elif deleteChoice == "2":
             for extraId in extraTracks:
-                fileToRemove = next((f for f in os.listdir(downloadFolder) if f.endswith(f"[{extraId}].mp3")), None)
-                if fileToRemove:
-                    os.remove(os.path.join(downloadFolder, fileToRemove))
-                    print(f"Deleted extra track: {fileToRemove}")
+                try:
+                    for file in os.listdir(downloadFolder):
+                        path = os.path.join(downloadFolder, file)
+                        audio = MP3(path, ID3=ID3)
+                        trackId = audio.get('TXXX:trackID', [None])[0]
+                        if trackId == extraId:
+                            os.remove(path)
+                            print(f"Deleted extra track: {file}")
+                except Exception:
+                    continue
